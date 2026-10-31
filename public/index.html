@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>物联网温湿度实时监控看板</title>
+  <script src="/echarts/echarts.min.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+      background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+      min-height: 100vh;
+      color: #fff;
+      padding: 24px;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+    }
+    .header h1 { font-size: 26px; letter-spacing: 2px; }
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 15px;
+      background: rgba(255,255,255,0.12);
+      padding: 8px 16px;
+      border-radius: 20px;
+    }
+    .dot {
+      width: 12px; height: 12px;
+      border-radius: 50%;
+      background: #f56c6c;
+      box-shadow: 0 0 8px #f56c6c;
+    }
+    .dot.online { background: #67c23a; box-shadow: 0 0 8px #67c23a; }
+    .cards {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 24px;
+    }
+    .card {
+      background: rgba(255,255,255,0.1);
+      border-radius: 14px;
+      padding: 24px;
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,0.18);
+    }
+    .card .label { font-size: 15px; opacity: 0.85; }
+    .card .value {
+      font-size: 44px;
+      font-weight: bold;
+      margin-top: 8px;
+    }
+    .card .unit { font-size: 20px; opacity: 0.7; margin-left: 4px; }
+    .card.temp .value { color: #ff8a65; }
+    .card.hum .value { color: #4fc3f7; }
+    .chart-box {
+      background: rgba(255,255,255,0.1);
+      border-radius: 14px;
+      padding: 20px;
+      border: 1px solid rgba(255,255,255,0.18);
+    }
+    #chart { width: 100%; height: 420px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>物联网温湿度实时监控看板</h1>
+    <div class="status">
+      <span class="dot" id="statusDot"></span>
+      <span id="statusText">未连接</span>
+    </div>
+  </div>
+
+  <div class="cards">
+    <div class="card temp">
+      <div class="label">最新温度</div>
+      <div class="value"><span id="tempVal">--</span><span class="unit">°C</span></div>
+    </div>
+    <div class="card hum">
+      <div class="label">最新湿度</div>
+      <div class="value"><span id="humVal">--</span><span class="unit">%RH</span></div>
+    </div>
+  </div>
+
+  <div class="chart-box">
+    <div id="chart"></div>
+  </div>
+
+  <script>
+    const chart = echarts.init(document.getElementById('chart'))
+    const MAX_POINTS = 50
+
+    const times = []
+    const temps = []
+    const hums = []
+
+    function buildOption() {
+      return {
+        tooltip: { trigger: 'axis' },
+        legend: { data: ['温度 (°C)', '湿度 (%RH)'], textStyle: { color: '#fff' } },
+        grid: { left: 50, right: 30, top: 50, bottom: 40 },
+        xAxis: {
+          type: 'category',
+          data: times,
+          axisLabel: { color: '#ddd', fontSize: 11 },
+          axisLine: { lineStyle: { color: 'rgba(255,255,255,0.3)' } }
+        },
+        yAxis: {
+          type: 'value',
+          axisLabel: { color: '#ddd' },
+          splitLine: { lineStyle: { color: 'rgba(255,255,255,0.1)' } }
+        },
+        series: [
+          {
+            name: '温度 (°C)',
+            type: 'line',
+            smooth: true,
+            data: temps,
+            itemStyle: { color: '#ff8a65' },
+            areaStyle: { color: 'rgba(255,138,101,0.25)' }
+          },
+          {
+            name: '湿度 (%RH)',
+            type: 'line',
+            smooth: true,
+            data: hums,
+            itemStyle: { color: '#4fc3f7' },
+            areaStyle: { color: 'rgba(79,195,247,0.25)' }
+          }
+        ]
+      }
+    }
+
+    chart.setOption(buildOption())
+    window.addEventListener('resize', () => chart.resize())
+
+    function addPoint(data) {
+      times.push(data.time)
+      temps.push(data.temp)
+      hums.push(data.hum)
+      if (times.length > MAX_POINTS) {
+        times.shift(); temps.shift(); hums.shift()
+      }
+      chart.setOption({ xAxis: { data: times }, series: [{ data: temps }, { data: hums }] })
+      document.getElementById('tempVal').textContent = data.temp.toFixed(2)
+      document.getElementById('humVal').textContent = data.hum.toFixed(2)
+    }
+
+    const socket = io()
+    socket.on('connect', () => {
+      document.getElementById('statusDot').classList.add('online')
+      document.getElementById('statusText').textContent = '已连接'
+    })
+    socket.on('disconnect', () => {
+      document.getElementById('statusDot').classList.remove('online')
+      document.getElementById('statusText').textContent = '未连接'
+    })
+    socket.on('history', (list) => {
+      list.forEach(addPoint)
+    })
+    socket.on('sensor', (data) => {
+      addPoint(data)
+    })
+  </script>
+</body>
+</html>
